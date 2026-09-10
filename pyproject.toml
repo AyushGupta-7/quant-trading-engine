@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "quant-trading-engine"
+version = "0.1.0"
+description = "Modular quant trading engine with grid/SAR strategies, macro regime filtering, and mock broker integration"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Core async & data
+    "aiohttp>=3.9",
+    "aiofiles>=23.0",
+    # Numerics
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pandas-ta>=0.3.14b",
+    # Config
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    # Observability
+    "structlog>=24.1",
+    # Storage
+    "aiosqlite>=0.19",
+    # Utilities
+    "python-dateutil>=2.8",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",
+    "mypy>=1.8",
+]
+extras = [
+    "redis>=5.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "streamlit>=1.32",
+    "kiteconnect>=5.0",
+]
+
+[project.scripts]
+qte-live     = "scripts.run_live:main"
+qte-backtest = "scripts.run_backtest:main"
+qte-wfo      = "scripts.run_walkforward:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["engine*", "scripts*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths   = ["tests"]
+addopts     = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true

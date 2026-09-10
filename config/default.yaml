@@ -1,0 +1,176 @@
+# =============================================================================
+# Quant Trading Engine — Default Configuration
+# =============================================================================
+
+system:
+  mode: "simulation"          # simulation | live
+  log_level: "INFO"
+  log_format: "json"          # json | console
+  data_dir: "data"
+
+# ---------------------------------------------------------------------------
+# Instruments
+# ---------------------------------------------------------------------------
+instruments:
+  - symbol: "CRUDEOIL"
+    exchange: "MCX"
+    asset_class: "commodity_futures"
+    lot_size: 100
+    tick_size: 1.0
+    currency: "INR"
+    margin_pct: 0.05           # approx SPAN margin
+
+  - symbol: "GOLD"
+    exchange: "MCX"
+    asset_class: "commodity_futures"
+    lot_size: 100
+    tick_size: 1.0
+    currency: "INR"
+    margin_pct: 0.04
+
+  - symbol: "NIFTY"
+    exchange: "NSE"
+    asset_class: "index_futures"
+    lot_size: 25
+    tick_size: 0.05
+    currency: "INR"
+    margin_pct: 0.10
+
+# ---------------------------------------------------------------------------
+# Market Data Feed
+# ---------------------------------------------------------------------------
+feed:
+  adapter: "mock"              # mock | kite
+  mock:
+    source: "csv"              # csv | synthetic
+    csv_path: "data/sample_ticks/CRUDEOIL_ticks.csv"
+    replay_speed: 1.0          # 1.0 = real-time, 0 = as-fast-as-possible
+    synthetic:
+      drift: 0.0001
+      volatility: 0.002
+      initial_price: 6000.0
+      seed: 42
+  kite:                        # populated when adapter = kite
+    api_key: ""
+    api_secret: ""
+    access_token: ""
+
+# ---------------------------------------------------------------------------
+# Bar Builder
+# ---------------------------------------------------------------------------
+bar_builder:
+  interval_seconds: 60         # 1-minute bars
+
+# ---------------------------------------------------------------------------
+# Broker
+# ---------------------------------------------------------------------------
+broker:
+  adapter: "mock"              # mock | kite
+  mock:
+    slippage_ticks: 1          # slippage in ticks (applied symmetrically)
+    fill_probability: 0.98     # probability of fill (simulates partial fills)
+    fill_latency_ms: 50        # simulated fill latency
+    rejection_rate: 0.01       # random rejection rate
+
+# ---------------------------------------------------------------------------
+# Risk
+# ---------------------------------------------------------------------------
+risk:
+  max_position_lots: 10        # max net position per symbol (in lots)
+  max_open_orders: 20
+  max_daily_loss: 50000        # INR
+  max_drawdown_pct: 0.05       # 5% from peak equity
+  kill_switch_auto: true       # auto-engage on circuit breaker
+
+# ---------------------------------------------------------------------------
+# Strategies
+# ---------------------------------------------------------------------------
+strategies:
+  grid:
+    enabled: true
+    symbols: ["CRUDEOIL"]
+    atr_period: 14
+    atr_multiplier: 1.0        # grid spacing = ATR * multiplier
+    max_grid_levels: 5
+    max_pyramid_levels: 3
+    position_cap_lots: 5
+    order_type: "LIMIT"
+
+  sar:
+    enabled: true
+    symbols: ["GOLD"]
+    atr_period: 14
+    atr_stop_multiplier: 2.0
+    pyramid_on_trend: true
+    max_pyramid_levels: 3
+    position_cap_lots: 5
+    order_type: "MARKET"
+
+# ---------------------------------------------------------------------------
+# Macro Regime Engine
+# ---------------------------------------------------------------------------
+regime:
+  update_interval_seconds: 300   # how often to re-score regime
+  proxies:
+    india_vix:
+      source: "mock"
+      mock_value: 18.0
+      bull_threshold: 20.0
+      bear_threshold: 25.0
+    usd_inr:
+      source: "mock"
+      mock_value: 83.5
+      stress_threshold: 85.0
+    fii_flow_crore:
+      source: "mock"
+      mock_value: 500.0
+      outflow_threshold: -1000.0
+  circuit_breaker:
+    daily_loss_limit: 50000      # INR (redundant with risk.max_daily_loss, intentional)
+    max_consecutive_losses: 5
+
+  # Per-regime parameter overrides (applied on top of strategy defaults)
+  overrides:
+    BULL:
+      grid.atr_multiplier: 0.8
+      grid.max_grid_levels: 6
+      sar.atr_stop_multiplier: 1.5
+    BEAR:
+      grid.atr_multiplier: 1.2
+      grid.max_grid_levels: 3
+      sar.atr_stop_multiplier: 2.5
+    SIDEWAYS:
+      grid.atr_multiplier: 0.6
+      grid.max_grid_levels: 5
+      sar.atr_stop_multiplier: 1.8
+    CRISIS:
+      grid.enabled: false
+      sar.enabled: false         # shut down all strategies in crisis
+
+# ---------------------------------------------------------------------------
+# Cost Model (Indian markets)
+# ---------------------------------------------------------------------------
+costs:
+  mcx:
+    ctt_pct: 0.0001            # Commodity Transaction Tax (sell side)
+    exchange_txn_charge_pct: 0.0026
+    sebi_fee_pct: 0.000001
+    gst_pct: 0.18              # on brokerage + exchange charges
+    brokerage_per_lot: 20.0    # flat per executed lot
+
+  nse_fo:
+    stt_pct: 0.000125          # STT on sell (futures)
+    exchange_txn_charge_pct: 0.0019
+    sebi_fee_pct: 0.000001
+    gst_pct: 0.18
+    brokerage_per_lot: 20.0
+
+# ---------------------------------------------------------------------------
+# Observability
+# ---------------------------------------------------------------------------
+observability:
+  blotter_path: "data/blotter.csv"
+  db_path: "data/trading.db"
+  alert_thresholds:
+    drawdown_pct: 0.03
+    position_utilisation_pct: 0.80

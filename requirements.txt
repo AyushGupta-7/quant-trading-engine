@@ -1,0 +1,19 @@
+# Core
+aiohttp>=3.9
+aiofiles>=23.0
+numpy>=1.26
+pandas>=2.1
+pandas-ta>=0.3.14b
+pyyaml>=6.0
+pydantic>=2.5
+structlog>=24.1
+aiosqlite>=0.19
+python-dateutil>=2.8
+pytz>=2024.1
+
+# Dev / test
+pytest>=8.0
+pytest-asyncio>=0.23
+pytest-cov>=4.1
+ruff>=0.3
+mypy>=1.8

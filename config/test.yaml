@@ -1,0 +1,33 @@
+# test overrides – only specify what differs from default.yaml
+system:
+  mode: "simulation"
+  log_level: "DEBUG"
+  log_format: "console"
+
+feed:
+  adapter: "mock"
+  mock:
+    source: "synthetic"
+    synthetic:
+      drift: 0.0
+      volatility: 0.001
+      initial_price: 6000.0
+      seed: 0
+
+broker:
+  adapter: "mock"
+  mock:
+    slippage_ticks: 0
+    fill_probability: 1.0
+    fill_latency_ms: 0
+    rejection_rate: 0.0
+
+risk:
+  max_position_lots: 100
+  max_daily_loss: 9999999
+  max_drawdown_pct: 1.0
+  kill_switch_auto: false
+
+observability:
+  blotter_path: ":memory:"
+  db_path: ":memory:"
