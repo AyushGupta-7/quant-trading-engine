@@ -2,8 +2,8 @@
 
 A modular, testable Python quant trading engine for MCX and NSE F&O markets.
 
-> **Assignment MVP** — All broker and market-data adapters are **simulated by default**.
-> No real orders are placed. Zerodha Kite Connect can be plugged in via a single config flag.
+> **Live trading is fully implemented** using Zerodha Kite Connect, but all broker and market-data adapters are **simulated by default** for safety.
+> Real-money live trading has not been validated in a production environment. Use mock adapters for local testing.
 
 ---
 
@@ -40,14 +40,14 @@ engine/
 ├── strategy/      # BaseStrategy, GridEngine, SAREngine
 ├── risk/          # KillSwitch, DrawdownGuard, PositionCapGuard, RiskGate
 ├── oms/           # IdempotentPlacer, SQLite StateStore, Reconciler
-├── broker/        # IBrokerAdapter, MockBrokerAdapter, KiteBrokerAdapter (stub)
+├── broker/        # IBrokerAdapter, MockBrokerAdapter, KiteBrokerAdapter
 ├── position/      # PositionBook, PnLEngine, CostModel (MCX CTT / NSE STT)
 ├── backtest/      # BacktestEngine (SimClock), BarFillModel (no lookahead)
 └── observability/ # structlog, TradeBlotter (CSV+SQLite), AlertManager
 
 scripts/
 ├── run_backtest.py   # CLI backtest runner
-└── run_live.py       # Async live session (mock by default)
+└── run_live.py       # Async live execution (mock or Kite Connect)
 
 tests/
 ├── unit/             # Indicators, BarBuilder, GridEngine, SAREngine, Risk, PnL
@@ -178,13 +178,35 @@ Key sections:
 
 ---
 
-## Plugging in Zerodha Kite Connect
+## Live Execution & Zerodha Kite Connect
 
-1. Set `feed.adapter: kite` and `broker.adapter: kite` in config.
-2. Fill in `feed.kite.api_key`, `api_secret`, `access_token`.
-3. Implement `engine/data/adapters/kite_feed.py` (WebSocket) and
-   `engine/broker/kite_broker.py` (REST). Stubs with the correct interface
-   are already in place — just replace the `NotImplementedError` bodies.
+The engine features a fully implemented, asyncio-based live execution pipeline:
+* **Live Engine Flow**: Asynchronous processing pipeline `Market Data → BarBuilder → Strategy → RiskGate → OMS`.
+* **Background Polling**: Background REST order-status polling and reconciliation ensures terminal order states are safely synced without blocking the tick stream.
+* **Resilience**: Supports graceful shutdown, safe crash/restart recovery using the SQLite WAL state store, and deterministic order reconciliation.
+
+### Kite Connect REST (Broker)
+`KiteBrokerAdapter` is fully implemented and provides:
+* Order placement and active cancellation
+* Order status polling and reconciliation
+* Authentication via API credentials and daily access tokens
+* Idempotent OMS integration using deterministic `client_order_id`
+
+### Kite Connect WebSocket (Feed)
+`KiteFeedAdapter` is fully implemented and provides:
+* Real-time tick streaming and parsing
+* Automatic WebSocket disconnect and reconnect handling
+* Automatic restoration of subscriptions after a reconnect
+* Bounded `asyncio.Queue` integration with back-pressure handling
+
+### Safe Local Testing vs Live Execution
+By default, the engine is configured to use `MockBrokerAdapter` and `SyntheticFeedAdapter` to safely simulate fills and market data without risk.
+
+To activate the real Zerodha Kite Connect integration:
+1. Set `feed.adapter: kite` and `broker.adapter: kite` in your configuration file.
+2. Provide your real API credentials by setting the `KITE_API_KEY`, `KITE_API_SECRET`, and `KITE_ACCESS_TOKEN` environment variables (see `.env.example`).
+
+*Warning: Real-money live trading performance and profitability have not been validated.*
 
 ---
 
@@ -218,13 +240,13 @@ python -m pytest tests/ --cov=engine --cov-report=term-missing
 
 ---
 
-## What's Mocked / Stubbed
+## What's Mocked / Simulated
+
+While the live adapters (Kite) are fully implemented, the following components are used by default for safe local simulation:
 
 | Component | Status |
 |---|---|
 | Market data feed | `SyntheticFeedAdapter` (GBM) + `CsvFeedAdapter` |
 | Broker fills | `MockBrokerAdapter` (Gaussian slippage, configurable latency) |
 | Macro proxies | Static values from config or CSV time-series |
-| Zerodha Kite Feed | Stub (`NotImplementedError`) |
-| Zerodha Kite Broker | Stub with retry/token-refresh skeleton |
 | SPAN margin | Formula-based approximation |

@@ -155,7 +155,7 @@ class OrderStateStore:
             order_type=OrderType(row["order_type"]),
             price=Decimal(row["price"]) if row["price"] else None,
             avg_fill_price=Decimal(row["avg_fill_price"]),
-            state=OrderState(row["state"]),
+            state=OrderState(int(row["state"]) if str(row["state"]).isdigit() else row["state"]),
             strategy_id=row["strategy_id"],
             tag=row["tag"] or "",
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,

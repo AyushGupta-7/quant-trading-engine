@@ -64,8 +64,10 @@ class BaseStrategy(ABC):
         list[OrderIntent]
             Zero or more order intentions.  May be empty.
         """
-        if not self._enabled or self._kill_switch_engaged:
+        if not self._enabled:
             return []
+        if self._kill_switch_engaged:
+            return self._on_kill_switch_bar(bar, indicators)
         return self._on_bar(bar, indicators)
 
     def on_tick(self, tick: Tick) -> list[OrderIntent]:
@@ -136,6 +138,9 @@ class BaseStrategy(ABC):
 
     def _on_kill_switch(self) -> None:
         pass
+
+    def _on_kill_switch_bar(self, bar: Bar, indicators: dict[str, Any]) -> list[OrderIntent]:
+        return []
 
     # ------------------------------------------------------------------
     # Convenience helpers

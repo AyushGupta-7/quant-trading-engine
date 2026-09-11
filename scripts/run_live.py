@@ -121,55 +121,48 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
         tick_interval_seconds=0.1,
         max_ticks=500,
     )
-    await feed.connect()
-    await feed.subscribe(symbols)
+
+    from engine.core.live_engine import LiveEngine
+
+    engine = LiveEngine(
+        feed=feed,
+        broker=broker,
+        placer=placer,
+        strategies=strategies,
+        normaliser=normaliser,
+        bar_builder=bar_builder,
+        risk_gate=risk_gate,
+        indicators_state=indicators_state,
+        pos_book=pos_book,
+        pnl_engine=pnl_engine,
+        blotter=blotter,
+        poll_interval_seconds=3.0,
+    )
+    
+    # Wire MockBrokerAdapter to use LiveEngine's fill handler
+    broker._on_fill = engine.on_fill
+
+    # Register signal handlers
+    def _handle_signal(sig, frame):
+        logger.info("Signal %s received — initiating graceful shutdown", sig)
+        asyncio.create_task(engine.stop())
+
+    signal.signal(signal.SIGINT,  _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
 
     logger.info("Live engine started.  Symbols=%s  Ctrl-C to stop.", symbols)
 
-    async def process_ticks():
-        async for raw in feed.tick_stream():
-            if _shutdown.is_set():
-                break
-            try:
-                tick = normaliser.normalise(raw)
-                broker.update_ltp(tick.symbol, tick.ltp)
-                bar = bar_builder.update(tick)
-                if bar:
-                    await process_bar(bar)
-            except Exception:
-                logger.exception("Error processing tick")
-
-    async def process_bar(bar: Bar):
-        ind_set = indicators_state.get(bar.symbol, {})
-        current_inds = {}
-        for key, ind in ind_set.items():
-            val = ind.update(bar)
-            current_inds[key] = val
-            if key.startswith("supertrend_") and hasattr(ind, "trend_up"):
-                current_inds[f"{key}_up"] = ind.trend_up
-
-        for strategy in strategies:
-            syms = set(s.upper() for s in strategy._config.get("symbols", []))
-            if bar.symbol.upper() in syms or not syms:
-                intents = strategy.on_bar(bar, current_inds)
-                for intent in intents:
-                    ok, reason = risk_gate.approve(intent)
-                    if ok:
-                        order = await placer.place(intent)
-                        if order:
-                            risk_gate.position_cap.increment_open_orders()
-                    else:
-                        logger.debug("Rejected: %s", reason)
-
     try:
-        await asyncio.wait_for(process_ticks(), timeout=300)
+        await engine.start()
+        # Feed completion or timeout
+        await asyncio.wait_for(engine._process_task, timeout=300)
     except asyncio.TimeoutError:
         logger.info("Feed completed / timeout reached.")
-
-    # Shutdown
-    _shutdown.set()
-    await broker.disconnect()
-    blotter.close()
+    except asyncio.CancelledError:
+        logger.info("Engine cancelled.")
+    finally:
+        await engine.stop()
+        blotter.close()
 
     summary = pnl_engine.summary()
     logger.info("Session complete: %s", summary)

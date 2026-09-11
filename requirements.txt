@@ -1,6 +1,7 @@
 # Core
 aiohttp>=3.9
 aiofiles>=23.0
+kiteconnect>=5.0
 numpy>=1.26
 pandas>=2.1
 pandas-ta>=0.3.14b

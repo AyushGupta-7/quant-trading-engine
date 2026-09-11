@@ -33,6 +33,7 @@ class OrderType(Enum):
     LIMIT = "LIMIT"
     SL = "SL"            # stop-loss
     SL_M = "SL_M"        # stop-loss market
+    CANCEL = "CANCEL"
 
 
 class OrderState(Enum):

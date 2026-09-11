@@ -53,6 +53,11 @@ class RiskGate:
         """
         Run all guards.  Returns ``(True, "")`` or ``(False, reason)``.
         """
+        from engine.core.events import OrderType
+        if intent.order_type == OrderType.CANCEL:
+            self.approved_count += 1
+            return True, ""
+
         # 1. Kill switch
         if not self._ks.check():
             self.rejected_count += 1

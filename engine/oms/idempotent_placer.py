@@ -66,22 +66,50 @@ class IdempotentPlacer:
         self._store.upsert(order)
         logger.debug("IdempotentPlacer: persisted PENDING coid=%s", coid)
 
+        from engine.core.events import OrderType
+        if order.order_type == OrderType.CANCEL:
+            active_orders = [
+                o for o in self._store.get_by_state(OrderState.OPEN) + self._store.get_by_state(OrderState.PENDING)
+                if o.strategy_id == intent.strategy_id and o.symbol == intent.symbol and o.side == intent.side and o.price == intent.price
+            ]
+            for active in active_orders:
+                if active.broker_order_id:
+                    try:
+                        await self._broker.cancel_order(active.broker_order_id)
+                    except Exception as exc:
+                        logger.warning("IdempotentPlacer: failed to cancel broker_id=%s error=%s", active.broker_order_id, exc)
+                active.state = OrderState.CANCELLED
+                active.updated_at = datetime.now(tz=timezone.utc)
+                self._store.upsert(active)
+                logger.info("IdempotentPlacer: CANCELLED active order coid=%s", active.client_order_id)
+            
+            order.state = OrderState.COMPLETE
+            self._store.upsert(order)
+            return order
+
         try:
             broker_id = await self._broker.place_order(order)
         except Exception as exc:
-            order.state = OrderState.REJECTED
-            order.updated_at = datetime.now(tz=timezone.utc)
-            self._store.upsert(order)
-            logger.error("IdempotentPlacer: broker rejected coid=%s error=%s", coid, exc)
+            # We do not know if the broker actually received the order.
+            # Leave the state as PENDING so the reconciler can verify it.
+            logger.error("IdempotentPlacer: placement error coid=%s error=%s. Leaving PENDING.", coid, exc)
             return None
 
-        # --- Update to OPEN ---
+        # --- Re-fetch to avoid overwriting background polling fills ---
+        # The background polling task may have received a fill and mutated the DB
+        # while we were yielding to await place_order().
+        latest = self._store.get(coid)
+        if latest is not None:
+            order = latest
+
+        # --- Update to OPEN if not already advanced ---
         order.broker_order_id = broker_id
-        order.state           = OrderState.OPEN
-        order.updated_at      = datetime.now(tz=timezone.utc)
+        if order.state == OrderState.PENDING:
+            order.state = OrderState.OPEN
+        order.updated_at = datetime.now(tz=timezone.utc)
         self._store.upsert(order)
         logger.info(
-            "IdempotentPlacer: OPEN coid=%s broker_id=%s sym=%s side=%s qty=%d",
+            "IdempotentPlacer: OPEN/UPDATED coid=%s broker_id=%s sym=%s side=%s qty=%d",
             coid, broker_id, order.symbol, order.side.value, order.qty,
         )
         return order

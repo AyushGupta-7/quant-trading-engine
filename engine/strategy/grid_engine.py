@@ -137,6 +137,22 @@ class GridEngine(BaseStrategy):
             self._atr_mult, self._max_levels, self._pos_cap,
         )
 
+    def _on_kill_switch_bar(self, bar: Bar, indicators: dict[str, Any]) -> list[OrderIntent]:
+        intents: list[OrderIntent] = []
+        if self._pending_levels:
+            for price, side in self._pending_levels.items():
+                intents.append(
+                    self._make_intent(
+                        bar, side, qty=0,
+                        order_type=OrderType.CANCEL,
+                        price=price,
+                        tag="grid_cancel"
+                    )
+                )
+            self._pending_levels.clear()
+            logger.info("GridEngine[%s]: kill switch engaged — emitted CANCEL for pending levels", self.strategy_id)
+        return intents
+
     # ------------------------------------------------------------------
     # Grid computation
     # ------------------------------------------------------------------

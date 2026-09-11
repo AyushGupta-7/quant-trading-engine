@@ -47,16 +47,39 @@ class ReconciliationEngine:
 
         for order in to_check:
             if order.broker_order_id is None:
-                # Was never sent to broker — mark rejected
-                order.state      = OrderState.REJECTED
-                order.updated_at = datetime.now(tz=timezone.utc)
-                self._store.upsert(order)
-                resolved += 1
-                logger.warning(
-                    "Reconciler: no broker_id for coid=%s → REJECTED",
-                    order.client_order_id,
-                )
-                continue
+                # Missing broker_id (e.g. timeout during placement). Try to find it.
+                get_orders = getattr(self._broker, "get_orders", None)
+                found = False
+                if callable(get_orders):
+                    try:
+                        broker_orders = await get_orders()
+                        for b_o in broker_orders:
+                            # Kite maps client_order_id[:20] to 'tag'
+                            if str(b_o.get("tag", "")) == order.client_order_id[:20]:
+                                order.broker_order_id = str(b_o.get("order_id", ""))
+                                found = True
+                                logger.info(
+                                    "Reconciler: recovered broker_id=%s for coid=%s via tag match",
+                                    order.broker_order_id, order.client_order_id
+                                )
+                                break
+                    except Exception as exc:
+                        logger.error("Reconciler: get_orders failed for recovery of coid=%s: %s", order.client_order_id, exc)
+                        errors += 1
+                        continue  # Skip marking REJECTED if we can't reliably check
+                
+                if not found:
+                    # Truly never received by broker
+                    order.state      = OrderState.REJECTED
+                    order.updated_at = datetime.now(tz=timezone.utc)
+                    self._store.upsert(order)
+                    resolved += 1
+                    logger.warning(
+                        "Reconciler: no broker_id for coid=%s and not found on broker → REJECTED",
+                        order.client_order_id,
+                    )
+                    continue
+                # If found, fall through to update state and upsert below
 
             try:
                 broker_state = await self._broker.get_order_status(order.broker_order_id)

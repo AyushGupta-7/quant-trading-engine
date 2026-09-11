@@ -52,7 +52,14 @@ class BarFillModel:
 
     def submit(self, order: Order, instrument: Instrument) -> None:
         """Register an order for fill evaluation on the next bar."""
-        self._pending.append((order, instrument))
+        from engine.core.events import OrderType
+        if order.order_type == OrderType.CANCEL:
+            self._pending = [
+                (o, i) for o, i in self._pending
+                if not (o.strategy_id == order.strategy_id and o.symbol == order.symbol and o.side == order.side and o.price == order.price)
+            ]
+        else:
+            self._pending.append((order, instrument))
 
     def process_bar(self, bar: Bar) -> list[Fill]:
         """
