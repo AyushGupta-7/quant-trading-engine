@@ -37,9 +37,10 @@ class BaseStrategy(ABC):
         Strategy-specific config dict (from config YAML).
     """
 
-    def __init__(self, strategy_id: str, config: dict) -> None:
+    def __init__(self, strategy_id: str, config: dict, config_prefix: str = "") -> None:
         self.strategy_id = strategy_id
         self._config = dict(config)
+        self._config_prefix = config_prefix   # B10: e.g. "grid" or "sar"
         self._enabled: bool = bool(config.get("enabled", True))
         self._kill_switch_engaged: bool = False
 
@@ -81,12 +82,31 @@ class BaseStrategy(ABC):
         """
         Called by the engine when the macro regime transitions.
 
-        The engine passes *overrides* already merged with base config.
-        Subclasses should update their live parameters from *overrides*.
+        B10 fix: *overrides* may contain dot-notation keys such as
+        ``{"grid.atr_multiplier": 0.8, "sar.enabled": False}``.  Only keys
+        whose prefix matches this strategy's ``_config_prefix`` (or that have
+        no prefix at all) are merged.  The merged dict uses **flat** keys
+        (``"atr_multiplier"``) so that subclass ``_on_regime_change``
+        implementations can read them directly from ``self._config``.
         """
-        self._config.update(overrides)
+        flat: dict = {}
+        for k, v in overrides.items():
+            if "." in k:
+                prefix, leaf = k.split(".", 1)
+                # Accept the key only when it belongs to this strategy type
+                if self._config_prefix and prefix == self._config_prefix:
+                    flat[leaf] = v
+                elif not self._config_prefix:
+                    # No prefix registered — accept all dot-keys (legacy behaviour)
+                    flat[leaf] = v
+                # else: belongs to a different strategy — silently skip
+            else:
+                # Plain key (no dot) — apply to every strategy
+                flat[k] = v
+
+        self._config.update(flat)
         self._enabled = bool(self._config.get("enabled", True))
-        self._on_regime_change(new_state, overrides)
+        self._on_regime_change(new_state, flat)
 
     def on_kill_switch(self) -> None:
         """Engage kill switch — strategy will stop issuing intents."""

@@ -49,7 +49,7 @@ class KillSwitch:
         self._engaged = True
         self._path.parent.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(tz=timezone.utc).isoformat()
-        self._path.write_text(f"{ts}: {reason}\n")
+        self._path.write_text(f"{ts}: {reason}\n", encoding="utf-8")
         logger.critical("KillSwitch: ENGAGED — reason=%s", reason)
 
     def reset(self) -> None:

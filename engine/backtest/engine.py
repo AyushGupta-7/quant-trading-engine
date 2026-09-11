@@ -38,6 +38,7 @@ from engine.oms.state_store import OrderStateStore
 from engine.position.position_book import PositionBook
 from engine.position.pnl_engine import PnLEngine
 from engine.position.cost_model import CostModel
+from engine.regime.circuit_breaker import CircuitBreaker
 from engine.risk.risk_gate import RiskGate
 from engine.strategy.base import BaseStrategy
 from engine.observability.blotter import TradeBlotter
@@ -73,12 +74,16 @@ class BacktestEngine:
         cost_model: CostModel | None = None,
         slippage_ticks: int = 1,
         blotter: "TradeBlotter | None" = None,
+        circuit_breaker: CircuitBreaker | None = None,   # B9: wired into fill path
+        regime_engine=None,                              # RegimeEngine | None
     ) -> None:
         self._strategies  = strategies
         self._risk_gate   = risk_gate
         self._registry    = registry
         self._cost_model  = cost_model
         self._blotter     = blotter
+        self._circuit_breaker = circuit_breaker          # B9
+        self._regime_engine   = regime_engine            # regime integration
         self._clock       = SimClock()
 
         self._fill_model  = BarFillModel(
@@ -115,6 +120,12 @@ class BacktestEngine:
         for i, bar in enumerate(bars):
             # Advance simulated clock (no lookahead: clock == bar time)
             self._clock.advance(bar.ts)
+            # B1: derive a stable ms timestamp from the bar (not wall-clock)
+            bar_ts_ms = int(bar.ts.timestamp() * 1000)
+
+            # 0. Regime engine — update macro state before strategies run
+            if self._regime_engine is not None:
+                self._regime_engine.on_bar(bar.ts)
 
             # 1. Fill orders from PREVIOUS bar against THIS bar
             fills_this_bar = self._fill_model.process_bar(bar)
@@ -126,12 +137,14 @@ class BacktestEngine:
 
             # 3. Run strategies → collect order intents
             for strategy in self._strategies:
-                if bar.symbol in self._strategy_symbols(strategy):
+                sym_filter = self._strategy_symbols(strategy)  # B4: None = match-all
+                if sym_filter is None or bar.symbol in sym_filter:
                     intents = strategy.on_bar(bar, ind)
                     for intent in intents:
                         approved, reason = self._risk_gate.approve(intent)
                         if approved:
-                            order = intent_to_order(intent)
+                            # B1: pass bar_ts_ms so ID is deterministic per bar
+                            order = intent_to_order(intent, bar_ts_ms)
                             self._store.upsert(order)
                             self._fill_model.submit(order, self._registry.get(intent.symbol))
                         else:
@@ -174,6 +187,10 @@ class BacktestEngine:
         prev_pos = self._position_book.get(fill.symbol)
         realised = self._pnl_engine.on_fill(fill, prev_pos)
         self._position_book.on_fill(fill)
+
+        # B9: feed realised P&L into circuit breaker so daily limits are enforced
+        if self._circuit_breaker is not None:
+            self._circuit_breaker.record_pnl(realised, fill.ts)
 
         # Notify strategies
         for strategy in self._strategies:
@@ -229,9 +246,17 @@ class BacktestEngine:
             "vwap":        VWAP(),
         }
 
-    def _strategy_symbols(self, strategy: BaseStrategy) -> set[str]:
+    def _strategy_symbols(self, strategy: BaseStrategy) -> set[str] | None:
+        """Return the set of upper-cased symbols this strategy listens to.
+
+        Returns ``None`` (match-all) when the strategy has no explicit symbol
+        list configured.  Previously returned ``{""}`` which never matched any
+        real symbol — B4 fix.
+        """
         symbols = strategy._config.get("symbols", [])
-        return set(s.upper() for s in symbols) if symbols else {""}
+        if not symbols:
+            return None   # match every bar symbol
+        return {s.upper() for s in symbols}
 
     def _get_lot_size(self, symbol: str) -> int:
         try:

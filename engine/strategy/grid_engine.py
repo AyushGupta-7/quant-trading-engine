@@ -46,7 +46,7 @@ class GridEngine(BaseStrategy):
     """
 
     def __init__(self, strategy_id: str, config: dict) -> None:
-        super().__init__(strategy_id, config)
+        super().__init__(strategy_id, config, config_prefix="grid")  # B10
         self._atr_period     = int(config.get("atr_period", 14))
         self._atr_mult       = float(config.get("atr_multiplier", 1.0))
         self._max_levels     = int(config.get("max_grid_levels", 5))
@@ -87,6 +87,9 @@ class GridEngine(BaseStrategy):
                 self.strategy_id, self._anchor, self._grid_spacing,
             )
 
+        # B2: prune levels that are now outside the valid grid range
+        self._prune_stale_levels()
+
         return self._compute_orders(bar)
 
     def _on_fill(self, fill: Fill) -> None:
@@ -97,7 +100,7 @@ class GridEngine(BaseStrategy):
             self._net_lots -= fill.fill_qty
             self._pyramid_count = max(0, self._pyramid_count - 1)
 
-        # Remove the filled level from pending
+        # Remove only the exact filled level
         self._pending_levels.pop(fill.fill_price, None)
 
         # Move anchor towards fill price (trend-following adjustment)
@@ -107,6 +110,14 @@ class GridEngine(BaseStrategy):
                 self._anchor = fill.fill_price + self._grid_spacing / 2
             else:
                 self._anchor = fill.fill_price - self._grid_spacing / 2
+
+            # B2: anchor has moved — all old levels are now stale; clear them.
+            # Fresh levels will be computed in _compute_orders on the next bar.
+            self._pending_levels.clear()
+            logger.debug(
+                "GridEngine[%s]: anchor moved to %.2f — pending_levels cleared",
+                self.strategy_id, self._anchor,
+            )
 
         logger.debug(
             "GridEngine[%s]: fill side=%s qty=%d @%.2f  net_lots=%d anchor=%.2f",
@@ -171,6 +182,30 @@ class GridEngine(BaseStrategy):
                 self._pending_levels[sell_price] = Side.SELL
 
         return intents
+
+    def _prune_stale_levels(self) -> None:
+        """B2: Remove any pending level whose price is outside the current grid range.
+
+        A level is stale when the anchor has moved far enough that the level
+        is now more than ``max_grid_levels`` spacings away.  We drop it here
+        so it is never presented as a duplicate guard in ``_compute_orders``
+        and the corresponding fill-model order becomes an orphan that will
+        simply expire without filling.
+        """
+        if self._anchor is None or self._grid_spacing <= 0:
+            return
+        max_dist = (self._max_levels + 1) * self._grid_spacing   # +1 for rounding
+        stale = [
+            price for price in list(self._pending_levels)
+            if abs(price - self._anchor) > max_dist
+        ]
+        if stale:
+            for price in stale:
+                del self._pending_levels[price]
+            logger.debug(
+                "GridEngine[%s]: pruned %d stale pending levels",
+                self.strategy_id, len(stale),
+            )
 
     # ------------------------------------------------------------------
     # State accessors (for tests / observability)

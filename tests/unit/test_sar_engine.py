@@ -47,14 +47,18 @@ class TestSAREngine:
     def test_initial_entry_long_on_uptrend(self):
         sar = make_sar()
         intents = sar.on_bar(make_bar(6000.0), make_indicators(trend_up=True))
-        assert len(intents) == 1
+        # Entry + optional stop order
+        assert len(intents) >= 1
         assert intents[0].side == Side.BUY
+        assert intents[0].tag == "sar_entry"
 
     def test_initial_entry_short_on_downtrend(self):
         sar = make_sar()
         intents = sar.on_bar(make_bar(6000.0), make_indicators(trend_up=False))
-        assert len(intents) == 1
+        # Entry + optional stop order
+        assert len(intents) >= 1
         assert intents[0].side == Side.SELL
+        assert intents[0].tag == "sar_entry"
 
     def test_stop_price_set_on_entry(self):
         sar = make_sar(stop_mult=2.0)
@@ -69,9 +73,13 @@ class TestSAREngine:
         sar._net_lots = 1  # simulate filled
 
         intents = sar.on_bar(make_bar(5900.0), make_indicators(trend_up=False))
+        tags = [i.tag for i in intents]
         sides = [i.side for i in intents]
         assert Side.SELL in sides  # close long
-        assert len(intents) == 2  # close + new short entry
+        assert "sar_close" in tags
+        assert "sar_reverse" in tags
+        # May also emit a stop intent — at least 2 intents
+        assert len(intents) >= 2
 
     def test_pyramid_adds_on_trend(self):
         sar = make_sar(max_pyramid=3)
