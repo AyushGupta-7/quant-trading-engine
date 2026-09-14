@@ -250,3 +250,48 @@ While the live adapters (Kite) are fully implemented, the following components a
 | Broker fills | `MockBrokerAdapter` (Gaussian slippage, configurable latency) |
 | Macro proxies | Static values from config or CSV time-series |
 | SPAN margin | Formula-based approximation |
+
+---
+
+## Docker Support
+
+The engine includes a production-ready `Dockerfile` to easily run the project in an isolated container without affecting your local environment.
+By default, the Docker setup uses the safe simulation mode with mock adapters, meaning it does **not** contain or require real trading credentials.
+
+### Build the Image
+```bash
+docker build -t quant-trading-engine .
+```
+
+### Run Tests in Docker
+```bash
+docker run --rm quant-trading-engine python -m pytest tests/
+```
+
+### Run Backtest in Docker
+```bash
+docker run --rm quant-trading-engine qte-backtest
+```
+
+### Run Live Simulation in Docker
+```bash
+docker run --rm quant-trading-engine qte-live
+```
+
+### Docker Compose
+
+You can also use Docker Compose for a simpler reproducible workflow:
+
+```bash
+# Build the image
+docker compose build
+
+# Run tests
+docker compose run --rm engine pytest -q
+
+# Run backtest
+docker compose run --rm engine qte-backtest
+
+# Run live simulation
+docker compose run --rm engine qte-live
+```

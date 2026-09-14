@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "quant-trading-engine"
@@ -15,7 +15,6 @@ dependencies = [
     # Numerics
     "numpy>=1.26",
     "pandas>=2.1",
-    "pandas-ta>=0.3.14b",
     # Config
     "pyyaml>=6.0",
     "pydantic>=2.5",

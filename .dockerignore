@@ -1,0 +1,12 @@
+.git
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+venv
+.venv
+*.log
+data/trading.db
+data/blotter.csv

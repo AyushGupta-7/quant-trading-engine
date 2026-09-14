@@ -56,9 +56,7 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
 
     setup_logging(cfg["system"].get("log_level", "INFO"), cfg["system"].get("log_format", "console"))
 
-    # Register signal handlers
-    signal.signal(signal.SIGINT,  _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
+
 
     # Build components
     registry   = InstrumentRegistry.from_config(cfg["instruments"])

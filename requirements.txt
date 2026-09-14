@@ -4,7 +4,6 @@ aiofiles>=23.0
 kiteconnect>=5.0
 numpy>=1.26
 pandas>=2.1
-pandas-ta>=0.3.14b
 pyyaml>=6.0
 pydantic>=2.5
 structlog>=24.1

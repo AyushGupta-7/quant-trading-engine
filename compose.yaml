@@ -1,0 +1,6 @@
+services:
+  engine:
+    build:
+      context: .
+    image: quant-trading-engine:latest
+    container_name: quant-trading-engine
