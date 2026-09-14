@@ -40,6 +40,7 @@ class LiveEngine:
         pos_book: Any = None,
         pnl_engine: Any = None,
         blotter: Any = None,
+        redis_adapter: Any = None,
         poll_interval_seconds: float = 3.0,
     ) -> None:
         self._feed = feed
@@ -53,6 +54,7 @@ class LiveEngine:
         self._pos_book = pos_book
         self._pnl_engine = pnl_engine
         self._blotter = blotter
+        self._redis_adapter = redis_adapter
         self._poll_interval = poll_interval_seconds
         
         self._running = False
@@ -118,6 +120,9 @@ class LiveEngine:
                     if not tick:
                         continue
                         
+                    if self._redis_adapter:
+                        self._redis_adapter.publish_nowait("ticks", tick)
+
                     # Update LTP in broker for mock fill logic or tracking
                     if hasattr(self._broker, "update_ltp"):
                         self._broker.update_ltp(tick.symbol, tick.ltp)
@@ -183,6 +188,9 @@ class LiveEngine:
         if self._blotter:
             self._blotter.record(fill)
             
+        if self._redis_adapter:
+            self._redis_adapter.publish_nowait("fills", fill)
+
         for strategy in self._strategies:
             if hasattr(strategy, "on_fill"):
                 strategy.on_fill(fill)

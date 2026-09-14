@@ -1,6 +1,22 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: quant-trading-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   engine:
     build:
       context: .
     image: quant-trading-engine:latest
     container_name: quant-trading-engine
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0

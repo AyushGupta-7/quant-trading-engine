@@ -35,20 +35,12 @@ from engine.position.cost_model import CostModel
 from engine.position.position_book import PositionBook
 from engine.position.pnl_engine import PnLEngine
 from engine.risk.risk_gate import RiskGate
+from engine.strategy.base import BaseStrategy
 from engine.strategy.grid_engine import GridEngine
 from engine.strategy.sar_engine import SAREngine
 from engine.broker.mock_broker import MockBrokerAdapter
 
 logger = logging.getLogger(__name__)
-
-# Global shutdown event
-_shutdown = asyncio.Event()
-
-
-def _handle_signal(sig, frame):
-    logger.info("Signal %s received — initiating graceful shutdown", sig)
-    _shutdown.set()
-
 
 async def main_async(config_path: str = "config/default.yaml") -> None:
     with open(config_path) as f:
@@ -56,7 +48,15 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
 
     setup_logging(cfg["system"].get("log_level", "INFO"), cfg["system"].get("log_format", "console"))
 
-
+    # Setup Redis if configured
+    import os
+    from engine.infrastructure.redis_adapter import RedisAdapter
+    redis_adapter = None
+    redis_cfg = cfg.get("infrastructure", {}).get("redis", {})
+    if redis_cfg.get("enabled"):
+        redis_url = os.environ.get("REDIS_URL", redis_cfg.get("url", "redis://localhost:6379/0"))
+        redis_adapter = RedisAdapter(redis_url)
+        await redis_adapter.connect()
 
     # Build components
     registry   = InstrumentRegistry.from_config(cfg["instruments"])
@@ -91,7 +91,7 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
     placer = IdempotentPlacer(store=store, broker=broker)
 
     # Strategies
-    strategies = []
+    strategies: list[BaseStrategy] = []
     grid_cfg = cfg["strategies"]["grid"]
     strategies.append(GridEngine("grid-01", grid_cfg))
     sar_cfg  = cfg["strategies"]["sar"]
@@ -134,6 +134,7 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
         pos_book=pos_book,
         pnl_engine=pnl_engine,
         blotter=blotter,
+        redis_adapter=redis_adapter,
         poll_interval_seconds=3.0,
     )
     
@@ -141,19 +142,20 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
     broker._on_fill = engine.on_fill
 
     # Register signal handlers
-    def _handle_signal(sig, frame):
+    def local_handle_signal(sig, frame):
         logger.info("Signal %s received — initiating graceful shutdown", sig)
         asyncio.create_task(engine.stop())
 
-    signal.signal(signal.SIGINT,  _handle_signal)
-    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT,  local_handle_signal)
+    signal.signal(signal.SIGTERM, local_handle_signal)
 
     logger.info("Live engine started.  Symbols=%s  Ctrl-C to stop.", symbols)
 
     try:
         await engine.start()
         # Feed completion or timeout
-        await asyncio.wait_for(engine._process_task, timeout=300)
+        if engine._process_task is not None:
+            await asyncio.wait_for(engine._process_task, timeout=300)
     except asyncio.TimeoutError:
         logger.info("Feed completed / timeout reached.")
     except asyncio.CancelledError:
@@ -161,6 +163,8 @@ async def main_async(config_path: str = "config/default.yaml") -> None:
     finally:
         await engine.stop()
         blotter.close()
+        if redis_adapter:
+            await redis_adapter.disconnect()
 
     summary = pnl_engine.summary()
     logger.info("Session complete: %s", summary)

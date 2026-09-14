@@ -174,3 +174,11 @@ observability:
   alert_thresholds:
     drawdown_pct: 0.03
     position_utilisation_pct: 0.80
+
+# ---------------------------------------------------------------------------
+# Infrastructure
+# ---------------------------------------------------------------------------
+infrastructure:
+  redis:
+    enabled: true
+    url: "redis://localhost:6379/0"

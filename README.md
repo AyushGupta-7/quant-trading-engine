@@ -280,18 +280,20 @@ docker run --rm quant-trading-engine qte-live
 
 ### Docker Compose
 
-You can also use Docker Compose for a simpler reproducible workflow:
+You can also use Docker Compose for a simpler reproducible workflow. The Compose stack includes an optional **Redis** service acting as a lightweight event distribution layer for live events (ticks, fills). *Note: Redis does NOT replace the SQLite OMS persistence, which remains fully intact.*
 
 ```bash
 # Build the image
 docker compose build
 
-# Run tests
-docker compose run --rm engine pytest -q
+# Start the stack (Engine + Redis) in the background
+docker compose up -d
 
-# Run backtest
-docker compose run --rm engine qte-backtest
+# Check logs
+docker compose logs -f
 
-# Run live simulation
-docker compose run --rm engine qte-live
+# Stop the stack
+docker compose down
 ```
+
+The engine gracefully handles Redis unavailability, meaning you can still run `docker compose run --rm engine qte-live` even if Redis isn't running.

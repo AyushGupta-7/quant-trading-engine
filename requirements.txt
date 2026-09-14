@@ -10,6 +10,7 @@ structlog>=24.1
 aiosqlite>=0.19
 python-dateutil>=2.8
 pytz>=2024.1
+redis>=5.0
 
 # Dev / test
 pytest>=8.0
